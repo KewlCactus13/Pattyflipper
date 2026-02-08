@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patty Flip</title>
+        <style>
+            html,body{height:100%;margin:0;overflow:hidden;background:#000}
+            canvas{display:block;touch-action:none}
+            #score{position:fixed;left:12px;top:12px;color:#fff;font:18px "Comic Sans MS", sans-serif}
+        </style>
+    </head>
+    <body>
+        <div id="score">Score: 0</div>
+        <canvas id="c"></canvas>
+        <script>
+            const canvas = document.getElementById('c');
+            const ctx = canvas.getContext('2d');
+            let DPR = window.devicePixelRatio || 1;
+            function resize() {
+                DPR = window.devicePixelRatio || 1;
+                canvas.width = Math.round(window.innerWidth * DPR);
+                canvas.height = Math.round(window.innerHeight * DPR);
+                canvas.style.width = window.innerWidth + 'px';
+                canvas.style.height = window.innerHeight + 'px';
+                ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+            }
+            window.addEventListener('resize', resize);
+            resize();
+
+            // images (place BG.png, Hand.png, Patty.png next to this file)
+            const bg = new Image(); bg.src = "BG.png";
+            const handImg = new Image(); handImg.src = "Hand.png";
+            const pattyImg = new Image(); pattyImg.src = "Patty.png";
+
+            // size variables
+            const pattySize = 100;  // scale the patty size here
+            const handSize = 125;   // scale the hand size here
+
+            // state
+            const hand = {x: window.innerWidth/2, y: window.innerHeight - 80, r: handSize/2};
+            const patty = {x: window.innerWidth/2, y: window.innerHeight - 120, vx:0, vy:0, r:pattySize/2, angle:0, av:0, state:'held'};
+            const gravity = 0.4;
+            let score = 0;
+
+            function dist(a,b){ const dx = a.x - b.x, dy = a.y - b.y; return Math.hypot(dx,dy); }
+
+            // pointer follows hand
+            window.addEventListener('pointermove', e => { hand.x = e.clientX; hand.y = e.clientY; });
+
+            // click to flip or catch
+            window.addEventListener('pointerdown', e => {
+                if (patty.state === 'held' && dist(patty, hand) < patty.r + hand.r) {
+                    patty.state = 'air';
+                    patty.vy = -12 - Math.random() * 4;
+                    patty.vx = (Math.random() - 0.5) * 6;
+                    // spin when flipping
+                    patty.av = (Math.random() > 0.1 ? 1 : -1) * (0.2 + Math.random() * 0.4);
+                } else if (patty.state !== 'held' && patty.vy > 0 && dist(patty, hand) < patty.r + hand.r) {
+                    // catch if overlapping while falling
+                    patty.state = 'held';
+                    score++; document.getElementById('score').textContent = 'Score: ' + score;
+                }
+            });
+
+            function update(){
+                if (patty.state === 'held') {
+                    patty.x = hand.x;
+                    patty.y = hand.y - 30;
+                    patty.vx = patty.vy = 0;
+                    patty.angle = 0;
+                    patty.av = 0;
+                } else {
+                    patty.vy += gravity;
+                    patty.x += patty.vx;
+                    patty.y += patty.vy;
+                    patty.angle += patty.av;
+                    patty.av *= 0.995;  // damping spin
+
+                    const ground = window.innerHeight - 40;
+                    if (patty.y > ground) {
+                        // reset score and grab patty again
+                        score = 0;
+                        document.getElementById('score').textContent = 'Score: 0';
+                        patty.state = 'held';
+                        patty.x = hand.x;
+                        patty.y = hand.y - 30;
+                        patty.vx = patty.vy = patty.av = 0;
+                        patty.angle = 0;
+                    }
+
+                    if (patty.vy > 0 && dist(patty, hand) < patty.r + hand.r) {
+                        patty.state = 'held';
+                        score++; document.getElementById('score').textContent = 'Score: ' + score;
+                    }
+                }
+            }
+
+            function draw(){
+                // background - preserve aspect ratio by covering canvas
+                if (bg.complete) {
+                    const bw = bg.naturalWidth, bh = bg.naturalHeight;
+                    if (bw && bh) {
+                        const cw = canvas.width / DPR, ch = canvas.height / DPR;
+                        const scale = Math.max(cw / bw, ch / bh);
+                        const w = bw * scale, h = bh * scale;
+                        ctx.drawImage(bg, (cw - w) / 2, (ch - h) / 2, w, h);
+                    } else {
+                        ctx.drawImage(bg, 0, 0, canvas.width/DPR, canvas.height/DPR);
+                    }
+                } else {
+                    ctx.fillStyle = '#88a'; ctx.fillRect(0, 0, canvas.width/DPR, canvas.height/DPR);
+                }
+
+                // patty - preserve aspect ratio
+                ctx.save();
+                ctx.translate(patty.x, patty.y);
+                ctx.rotate(patty.angle);  // spin
+                if (pattyImg.complete) {
+                    const pw = pattyImg.naturalWidth, ph = pattyImg.naturalHeight;
+                    if (pw && ph) {
+                        const scale = Math.min((patty.r * 2) / pw, (patty.r * 2) / ph);
+                        const w = pw * scale, h = ph * scale;
+                        ctx.drawImage(pattyImg, -w/2, -h/2, w, h);
+                    } else {
+                        ctx.drawImage(pattyImg, -patty.r, -patty.r, patty.r*2, patty.r*2);
+                    }
+                } else {
+                    ctx.fillStyle = 'saddlebrown'; ctx.beginPath(); ctx.arc(0, 0, patty.r, 0, Math.PI*2); ctx.fill();
+                }
+                ctx.restore();
+
+                // hand - preserve aspect ratio
+                if (handImg.complete) {
+                    const hw = handImg.naturalWidth, hh = handImg.naturalHeight;
+                    if (hw && hh) {
+                        const scale = Math.min((hand.r * 2) / hw, (hand.r * 2) / hh);
+                        const w = hw * scale, h = hh * scale;
+                        ctx.drawImage(handImg, hand.x - w/2, hand.y - h/2, w, h);
+                    } else {
+                        ctx.drawImage(handImg, hand.x - hand.r, hand.y - hand.r, hand.r*2, hand.r*2);
+                    }
+                } else {
+                    ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fillRect(hand.x-hand.r, hand.y-hand.r, hand.r*2, hand.r*2);
+                }
+            }
+
+            function tick(){
+                update();
+                ctx.clearRect(0,0,canvas.width/DPR,canvas.height/DPR);
+                draw();
+                requestAnimationFrame(tick);
+            }
+            tick();
+        </script>
+    </body>
+    </html>
